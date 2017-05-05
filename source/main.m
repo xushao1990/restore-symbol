@@ -28,6 +28,20 @@
 #define RS_OPT_REPLACE_RESTRICT 3
 
 
+NSString *runSystemCommand(NSString * cmd)
+{
+    NSTask *task = [[NSTask alloc] init];
+    [task setLaunchPath: @"/bin/bash"];
+    NSArray *arguments = [NSArray arrayWithObjects: @"-c", cmd, nil];
+    [task setArguments: arguments];
+    NSPipe *pipe = [NSPipe pipe];
+    [task setStandardOutput: pipe];
+    NSFileHandle *file = [pipe fileHandleForReading];
+    [task launch];
+    NSData *data = [file readDataToEndOfFile];
+    return [[NSString alloc] initWithData: data encoding: NSUTF8StringEncoding];
+}
+
 
 void print_usage(void)
 {
@@ -123,7 +137,35 @@ int main(int argc, char * argv[]) {
         inpath = [NSString stringWithUTF8String:argv[optind]];
     }
     
-    
-    restore_symbol(inpath, outpath, jsonPath, oc_detect_enable, replace_restrict);
-    
+    NSString *infoCommand = [NSString stringWithFormat:@"lipo -info %@",inpath];
+    NSString *info = runSystemCommand(infoCommand);
+    NSMutableArray *archs = @[].mutableCopy;
+    [[info componentsSeparatedByString:@" "] enumerateObjectsUsingBlock:^(NSString * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
+        if ([obj hasPrefix:@"arm"]) {
+            [archs addObject:obj];
+        }
+    }];
+    NSString *tempOutpath = outpath == nil ? [inpath stringByAppendingString:@"-o"] : outpath;
+    if (archs.count > 1) {
+        NSString *tempDir = [[inpath stringByDeletingLastPathComponent] stringByAppendingPathComponent:@".thintemp"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:tempDir withIntermediateDirectories:NO attributes:nil error:nil];
+        NSMutableString *createCommand = @"lipo -create ".mutableCopy;
+        for (NSString *arch in archs) {
+            NSString *thinMachO = [NSString stringWithFormat:@"%@/%@-%@",tempDir,inpath.lastPathComponent,arch];
+            NSString *thinMachOWithSymbol = [NSString stringWithFormat:@"%@-with_symbol",thinMachO];
+            NSString *thinCommand = [NSString stringWithFormat:@"lipo %@ -thin %@ -output %@",inpath,arch,thinMachO];
+            runSystemCommand(thinCommand);
+            restore_symbol(thinMachO, thinMachOWithSymbol, jsonPath, oc_detect_enable, replace_restrict);
+            [createCommand appendFormat:@"%@ ",thinMachOWithSymbol];
+        }
+        [createCommand appendFormat:@"-output %@",tempOutpath];
+        runSystemCommand(createCommand);
+        [[NSFileManager defaultManager] removeItemAtPath:tempDir error:nil];
+    } else {
+        restore_symbol(inpath, tempOutpath, jsonPath, oc_detect_enable, replace_restrict);
+    }
+    if (outpath == nil) {
+        [[NSFileManager defaultManager] removeItemAtPath:inpath error:nil];
+        [[NSFileManager defaultManager] moveItemAtPath:tempOutpath toPath:inpath error:nil];
+    }
 }

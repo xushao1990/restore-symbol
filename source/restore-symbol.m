@@ -80,8 +80,10 @@ void restore_symbol(NSString * inpath, NSString *outpath, NSString *jsonPath, bo
     RSSymbolCollector *collector = [RSSymbolCollector new];
     collector.machOFile = machOFile;
     
+    NSString *archName = [machOFile archName];
+    
     if (oc_detect_enable) {
-        fprintf(stderr, "Scan OC method in mach-o-file.\n");
+        fprintf(stderr, "[%s]Scan OC method in mach-o-file.\n",archName.UTF8String);
         
         CDClassDump *classDump = [[CDClassDump alloc] init];
         CDArch targetArch;
@@ -107,7 +109,7 @@ void restore_symbol(NSString * inpath, NSString *outpath, NSString *jsonPath, bo
             
         }
         
-        fprintf(stderr, "Scan OC method finish.\n");
+        fprintf(stderr, "[%s]Scan OC method finish.\n",archName.UTF8String);
     }
     
     
